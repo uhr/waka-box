@@ -13,8 +13,15 @@ const wakatime = new WakaTimeClient(wakatimeApiKey);
 const octokit = new Octokit({ auth: `token ${githubToken}` });
 
 async function main() {
-  const stats = await wakatime.getMyStats({ range: RANGE.LAST_7_DAYS });
-  await updateGist(stats);
+  //   const stats = await wakatime.getMyStats({ range: RANGE.LAST_7_DAYS });
+  const myGoals = await wakatime.getMyGoals();
+  let goalData = [];
+  try {
+    goalData = myGoals.data[0].chart_data;
+  } catch (err) {
+    console.log('err', err, myGoals);
+  }
+  await updateGist(goalData);
 }
 
 function trimRightStr(str, len) {
@@ -24,38 +31,52 @@ function trimRightStr(str, len) {
 
 async function updateGist(stats) {
   let gist;
+  let data = {};
   try {
     gist = await octokit.gists.get({ gist_id: gistId });
+    const prevData = JSON.parse((gist.data.files['weeklyCodingTimeData'] || {}).content || '{}');
+    stats.forEach(({ actual_seconds, actual_seconds_text, range={} }) => {
+      const { start, end } = range;
+      if (!prevData[start]) {
+        prevData[start] = {
+          start,
+          end,
+          actual_seconds,
+          actual_seconds_text
+        }
+      }
+    });
+    data = prevData;
   } catch (error) {
     console.error(`Unable to get gist\n${error}`);
   }
 
-  const lines = [];
-  for (let i = 0; i < Math.min(stats.data.languages.length, 5); i++) {
-    const data = stats.data.languages[i];
-    const { name, percent, text: time } = data;
-
-    const line = [
-      trimRightStr(name, 10).padEnd(10),
-      time.padEnd(14),
-      generateBarChart(percent, 21),
-      String(percent.toFixed(1)).padStart(5) + "%"
-    ];
-
-    lines.push(line.join(" "));
-  }
+  const lines = Object.keys(data).sort((a, b) => new Date(b) - new Date(a)).map(k => {
+    const { start, end, actual_seconds, actual_seconds_text } = data[k];
+    const startText = (new Date(start)).toString().slice(4, 10);
+    const endText   = (new Date(end)).toString().slice(4, 10);
+    const completeness = actual_seconds * 100 / 72000;
+    return [
+      `${startText}-${endText}`,
+      generateBarChart(completeness, 21),
+      actual_seconds_text
+    ].join(" ");
+  })
 
   if (lines.length == 0) return;
 
   try {
     // Get original filename to update that same file
-    const filename = Object.keys(gist.data.files)[0];
     await octokit.gists.update({
       gist_id: gistId,
       files: {
-        [filename]: {
-          filename: `📊 Weekly development breakdown`,
+        weeklyCodingTimeShow: {
+          filename: 'weeklyCodingTimeShow',
           content: lines.join("\n")
+        },
+        weeklyCodingTimeData: {
+          filename: 'weeklyCodingTimeData',
+          content: JSON.stringify(data)
         }
       }
     });

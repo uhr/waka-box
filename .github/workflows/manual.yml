@@ -15,5 +15,5 @@ jobs:
         uses: uhr/waka-box@master
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GIST_ID: 2d8fc2f73f27388dffd5eee1641cb11b
+          GIST_ID: 4861a382b4b19b944a0d52a9326c1b14
           WAKATIME_API_KEY: ${{ secrets.WAKATIME_API_KEY }}
